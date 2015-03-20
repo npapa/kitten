@@ -21,6 +21,8 @@ import java.io.InputStreamReader;
 import java.util.HashMap;
 import java.util.Map;
 
+import javax.xml.bind.Unmarshaller;
+
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 import org.apache.hadoop.conf.Configuration;
@@ -38,6 +40,10 @@ import com.cloudera.kitten.appmaster.service.ApplicationMasterServiceImpl;
 import com.cloudera.kitten.client.params.lua.LuaYarnClientParameters;
 import com.cloudera.kitten.client.service.YarnClientServiceImpl;
 import com.google.common.collect.ImmutableMap;
+
+import gr.cslab.asap.rest.beans.OperatorDictionary;
+import gr.cslab.asap.rest.beans.Unmarshall;
+import gr.cslab.asap.rest.beans.WorkflowDictionary;
 
 /**
  * A simple client for cases where there does not need to be any client-side logic to run a job.
@@ -72,22 +78,22 @@ public class KittenClient extends Configured implements Tool {
     Configuration conf = getConf();
     YarnClientService service = null;
     if(args.length == 1){
-		File edgeGraph = new File(args[0]);
-		FileInputStream fis = new FileInputStream(edgeGraph);
-		BufferedReader br = new BufferedReader(new InputStreamReader(fis));
-	 
-		String line = null;
 		HashMap<String,String> operators = new HashMap<String, String>();
-		while ((line = br.readLine()) != null) {
-			String[] e =line.split(",");
-			if(!e[0].contains(".txt")){
-				operators.put(e[0], e[0]+".lua");
+		HashMap<String,String> inputDatasets = new HashMap<String, String>();
+		WorkflowDictionary d = Unmarshall.unmarshall(args[0]);
+		for(OperatorDictionary op : d.getOperators()){
+			if(op.getIsOperator().equals("true")){
+				operators.put(op.getName(), op.getName()+".lua");
+			}
+			else{
+				if(op.getInput().isEmpty()){
+					inputDatasets.put(op.getName(), op.getName());
+				}
 			}
 		}
-		br.close();
 		System.out.println("Operators: "+operators);
-    
-	    LuaYarnClientParameters params = new LuaYarnClientParameters(args[0], operators, conf,
+		System.out.println("InputDatasets: "+inputDatasets);
+	    LuaYarnClientParameters params = new LuaYarnClientParameters(args[0], operators, inputDatasets, conf,
 	        extraLuaValues, extraLocalResources);
 	    service = new YarnClientServiceImpl(params);
     }

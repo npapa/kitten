@@ -14,10 +14,16 @@
  */
 package com.cloudera.kitten.appmaster.params.lua;
 
+import gr.cslab.asap.rest.beans.OperatorDictionary;
+import gr.cslab.asap.rest.beans.Unmarshall;
+import gr.cslab.asap.rest.beans.WorkflowDictionary;
+import gr.ntua.cslab.asap.workflow.MaterializedWorkflow1;
+
 import java.io.BufferedReader;
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileNotFoundException;
+import java.io.IOException;
 import java.io.InputStreamReader;
 import java.net.URI;
 import java.util.ArrayList;
@@ -27,10 +33,13 @@ import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
 
+import org.apache.commons.logging.Log;
+import org.apache.commons.logging.LogFactory;
 import org.apache.hadoop.conf.Configuration;
 
 import com.cloudera.kitten.ContainerLaunchParameters;
 import com.cloudera.kitten.appmaster.ApplicationMasterParameters;
+import com.cloudera.kitten.lua.AsapLuaContainerLaunchParameters;
 import com.cloudera.kitten.lua.LuaContainerLaunchParameters;
 import com.cloudera.kitten.lua.LuaFields;
 import com.cloudera.kitten.lua.LuaPair;
@@ -45,6 +54,7 @@ import org.apache.hadoop.net.NetUtils;
 
 public class WorkflowParameters implements ApplicationMasterParameters {
 
+	private static final Log LOG = LogFactory.getLog(WorkflowParameters.class);
 	private final HashMap<String,LuaWrapper> env;
 	private LuaWrapper e0;
   private final Configuration conf;
@@ -53,6 +63,8 @@ public class WorkflowParameters implements ApplicationMasterParameters {
 
   private int clientPort = 0;
   private String trackingUrl = "";
+private WorkflowDictionary workflow;
+private MaterializedWorkflow1 materializedWorkflow;
 
   public WorkflowParameters(Configuration conf) throws Exception{
     this(LuaFields.KITTEN_WORKFLOW_CONFIG_FILE, System.getenv(LuaFields.KITTEN_JOB_NAME), conf);
@@ -76,20 +88,21 @@ public class WorkflowParameters implements ApplicationMasterParameters {
       Map<String, Object> extras,
       Map<String, URI> localToUris) throws Exception {
 	  this.env = new HashMap<String,LuaWrapper>();
-	  File edgeGraph = new File(script);
-		FileInputStream fis = new FileInputStream(edgeGraph);
-		BufferedReader br = new BufferedReader(new InputStreamReader(fis));
-	 
-		String line = null;
 		HashMap<String,String> operators = new HashMap<String, String>();
-		while ((line = br.readLine()) != null) {
-			String[] e =line.split(",");
-			if(!e[0].contains(".txt")){
-				operators.put(e[0], e[0]+".lua");
+
+		workflow = Unmarshall.unmarshall(script);
+		
+		materializedWorkflow = new MaterializedWorkflow1("test");
+		materializedWorkflow.readFromWorkflowDictionary(workflow);
+		LOG.info(materializedWorkflow.getTargets().get(0).toStringRecursive());
+		
+		for(OperatorDictionary op : workflow.getOperators()){
+			if(op.getIsOperator().equals("true") && op.getStatus().equals("running")){
+				operators.put(op.getName(), op.getName()+".lua");
 			}
 		}
-		br.close();
-		System.out.println("Operators: "+operators);
+		LOG.info("Operators: "+operators);
+		
 		int i =0;
 		for(Entry<String, String> e : operators.entrySet()){
 			LuaWrapper l = new LuaWrapper(e.getValue(), loadExtras(extras)).getTable(e.getKey());
@@ -175,8 +188,14 @@ public class WorkflowParameters implements ApplicationMasterParameters {
 		      }
 		      
 		    } else if (!e.getValue().isNil(LuaFields.CONTAINER)) {
-		    	  String name = "operator_"+i+"_"+e.getKey();
-		        clp.put(e.getKey(),new LuaContainerLaunchParameters(e.getValue().getTable(LuaFields.CONTAINER), name, conf, localToUris));
+		    	  //String name = "operator_"+i+"_"+e.getKey();
+		    	  String name = e.getKey();
+		        try {
+					clp.put(e.getKey(),new AsapLuaContainerLaunchParameters(e.getValue().getTable(LuaFields.CONTAINER), name, conf, localToUris, materializedWorkflow, e.getKey()));
+				} catch (IOException e1) {
+					// TODO Auto-generated catch block
+					e1.printStackTrace();
+				}
 		        i++;
 		    }
 	  }

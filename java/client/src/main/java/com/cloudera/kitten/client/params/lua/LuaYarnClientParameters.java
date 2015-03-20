@@ -75,12 +75,15 @@ private String jobName;
   
 
 public LuaYarnClientParameters(String workflow, HashMap<String, String> operators,
-		Configuration conf, Map<String, Object> extraLuaValues,
+		HashMap<String, String> inputDatasets, Configuration conf, Map<String, Object> extraLuaValues,
 		Map<String, String> resources) {
 	  	this.env = new ArrayList<LuaWrapper>();
 	    this.extras = new Extras();
 	  	for( Entry<String, String> e : operators.entrySet()){
 	  		this.env.add(new LuaWrapper(e.getValue(), extraLuaValues).getTable(e.getKey()));
+	  	    this.extras.putResource(e.getValue(), e.getValue());
+	  	}
+	  	for( Entry<String, String> e : inputDatasets.entrySet()){
 	  	    this.extras.putResource(e.getValue(), e.getValue());
 	  	}
 	  	this.jobName=workflow;

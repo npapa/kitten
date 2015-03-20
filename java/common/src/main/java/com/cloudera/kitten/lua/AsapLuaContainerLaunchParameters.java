@@ -14,16 +14,25 @@
  */
 package com.cloudera.kitten.lua;
 
+import gr.cslab.asap.rest.beans.OperatorDictionary;
+import gr.cslab.asap.rest.beans.WorkflowDictionary;
+import gr.ntua.cslab.asap.operators.Operator;
+import gr.ntua.cslab.asap.workflow.MaterializedWorkflow1;
+import gr.ntua.cslab.asap.workflow.WorkflowNode;
+
 import java.io.BufferedWriter;
+import java.io.ByteArrayInputStream;
 import java.io.File;
 import java.io.FileOutputStream;
 import java.io.IOException;
+import java.io.InputStream;
 import java.io.OutputStreamWriter;
 import java.net.URI;
 import java.util.ArrayList;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
+import java.util.Map.Entry;
 import java.util.UUID;
 
 import org.apache.commons.logging.Log;
@@ -46,35 +55,46 @@ import com.cloudera.kitten.util.Extras;
 import com.google.common.collect.Lists;
 import com.google.common.collect.Maps;
 
-public class LuaContainerLaunchParameters implements ContainerLaunchParameters {
+public class AsapLuaContainerLaunchParameters implements ContainerLaunchParameters {
 
-  private static final Log LOG = LogFactory.getLog(LuaContainerLaunchParameters.class);
+  private static final Log LOG = LogFactory.getLog(AsapLuaContainerLaunchParameters.class);
   
   private final LuaWrapper lv;
   public final Configuration conf;
   public final Map<String, URI> localFileUris;
   private final Extras extras;
 
-private String dir;
-private String name;
-private String execScript;
-private int globalContainerId;
+	private String dir;
+	private String name;
+	private String execScript;
+	private int globalContainerId;
+	
+	private MaterializedWorkflow1 workflow;
+	
+	private OperatorDictionary operatorDictionary;
+	private WorkflowNode operator;
+	
+	private String opName;
   
-  public LuaContainerLaunchParameters(LuaValue lv, String name, Configuration conf, Map<String, URI> localFileUris) {
-    this(new LuaWrapper(lv.checktable()), name, conf, localFileUris, new Extras());
+  public AsapLuaContainerLaunchParameters(LuaValue lv, String name, Configuration conf, Map<String, URI> localFileUris, MaterializedWorkflow1 workflow, String opName) throws IOException {
+    this(new LuaWrapper(lv.checktable()), name, conf, localFileUris, new Extras(),workflow, opName);
   }
   
-  public LuaContainerLaunchParameters(LuaWrapper lv, String name, Configuration conf, Map<String, URI> localFileUris) {
-    this(lv, name, conf, localFileUris, new Extras());
+  public AsapLuaContainerLaunchParameters(LuaWrapper lv, String name, Configuration conf, Map<String, URI> localFileUris, MaterializedWorkflow1 workflow, String opName) throws IOException {
+    this(lv, name, conf, localFileUris, new Extras(),workflow, opName);
   }
   
-  public LuaContainerLaunchParameters(LuaWrapper lv, String name, Configuration conf,
-      Map<String, URI> localFileUris, Extras extras) {
+  public AsapLuaContainerLaunchParameters(LuaWrapper lv, String name, Configuration conf,
+      Map<String, URI> localFileUris, Extras extras, MaterializedWorkflow1 workflow, String opName) throws IOException {
 	  this.name=name;
     this.lv = lv;
     this.conf = conf;
     this.localFileUris = localFileUris;
     this.extras = extras;
+    this.workflow = workflow;
+    this.opName = opName;
+    this.operator = workflow.nodes.get(opName);
+    
     globalContainerId=0;
   }
 
@@ -88,6 +108,7 @@ private int globalContainerId;
 	        ret.add(restIter.next().value.tojstring());
 	      }
 	    }
+	    ret.add(operator.operator.getParameter("Execution.Output0.fileName"));
 	    return ret;
   }
   
@@ -148,6 +169,9 @@ private int globalContainerId;
 
     
     addScript(localResources);
+    addOperatorInputs(localResources);
+    //LOG.info("localFileUris: "+localFileUris);
+    //LOG.info("localResources: "+localResources);
     //System.out.println(localResources);
     
     
@@ -155,7 +179,34 @@ private int globalContainerId;
   }
 
 
-  private void addScript(Map<String, LocalResource> lres) throws IOException {
+  private void addOperatorInputs(Map<String, LocalResource> localResources) throws IOException {
+	  LOG.info("Inputs: "+operator.getInputFiles());
+	  for(Entry<String, String> e : operator.getInputFiles().entrySet()){
+		  	String inDir =dir;
+		  	if(!e.getValue().equals("")){
+		  		inDir+="/"+e.getValue()+"_0";
+		  	}
+			LocalResource rsrc = Records.newRecord(LocalResource.class);
+			rsrc.setType(LocalResourceType.FILE);
+			rsrc.setVisibility(LocalResourceVisibility.APPLICATION);
+			FileSystem fs = FileSystem.get(conf);
+			LOG.info("Adding input: "+inDir+"/"+e.getKey());
+			Path dst = new Path(inDir+"/"+e.getKey());
+			dst = fs.makeQualified(dst);
+			FileStatus stat = fs.getFileStatus(dst);
+			rsrc.setSize(stat.getLen());
+			rsrc.setTimestamp(stat.getModificationTime());
+			rsrc.setResource(ConverterUtils.getYarnUrlFromPath(dst));
+			localResources.put(e.getKey(), rsrc);
+	  }
+	  /*for(String in : operator.getArguments().split(" ")){
+		  LOG.info("Adding input: "+in);
+		  LocalResource nl = constructScriptResource();
+		  localResources.put(in, nl);
+	  }*/
+  }
+
+private void addScript(Map<String, LocalResource> lres) throws IOException {
 	  LocalResource nl = constructScriptResource();
 	  lres.put(execScript, nl);
   }
@@ -176,7 +227,7 @@ private int globalContainerId;
 	    FileSystem fs = FileSystem.get(conf);
 	    
 	    Path dst = new Path(dir+"/"+path.getName());
-	    fs.copyFromLocalFile(path, dst);
+	    fs.moveFromLocalFile(path, dst);
 	    dst = fs.makeQualified(dst);
 	    
 	    FileStatus stat = fs.getFileStatus(dst);
@@ -296,6 +347,14 @@ private int globalContainerId;
     dir = localFileUris.get(LuaFields.KITTEN_JOB_XML_FILE).getPath();
     dir = dir.substring(0, dir.lastIndexOf("/"));
     //System.out.println("Dir: " +dir);
+    String args = opName+" "+operator.getArguments();
+    
+    List<String> oldcmds = cmds;
+    cmds = new ArrayList<String>();
+    for(String c : oldcmds){
+    	cmds.add(c+" "+args);
+    }
+	LOG.info("Commands: "+cmds);
     
     List<String> stageOutFiles = getStageOutFiles();
     //System.out.println("stageOutFiles: "+stageOutFiles);

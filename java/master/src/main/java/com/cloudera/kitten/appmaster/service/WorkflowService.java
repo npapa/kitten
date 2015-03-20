@@ -44,6 +44,7 @@ import org.apache.hadoop.yarn.api.records.NodeReport;
 import org.apache.hadoop.yarn.api.records.Priority;
 import org.apache.hadoop.yarn.api.records.Resource;
 import org.apache.hadoop.yarn.client.api.AMRMClient;
+import org.apache.hadoop.yarn.client.api.AMRMClient.ContainerRequest;
 import org.apache.hadoop.yarn.client.api.async.AMRMClientAsync;
 import org.apache.hadoop.yarn.client.api.async.NMClientAsync;
 import org.apache.hadoop.yarn.conf.YarnConfiguration;
@@ -60,7 +61,7 @@ public class WorkflowService extends
     AbstractScheduledService implements ApplicationMasterService,
     AMRMClientAsync.CallbackHandler {
 
-  private static final Log LOG = LogFactory.getLog(ApplicationMasterServiceImpl1.class);
+  private static final Log LOG = LogFactory.getLog(WorkflowService.class);
 
   private final ApplicationMasterParameters parameters;
   private final YarnConfiguration conf;
@@ -117,10 +118,10 @@ protected ContainerLaunchContextFactory factory;
     }
     LOG.info("Trackers: " + trackers);
     
-    trackers.get("distshell").addNextTracker(trackers.get("distshell2"));
-    trackers.get("distshell").addNextTracker(trackers.get("distshell3"));
+    trackers.get("Move_MySQL_HBase").addNextTracker(trackers.get("HBase_HashJoin"));
+    trackers.get("HBase_HashJoin").addNextTracker(trackers.get("Sort2"));
     
-    trackers.get("distshell").init(factory);
+    trackers.get("Move_MySQL_HBase").init(factory);
     
     this.hasRunningContainers = true;
   }
@@ -189,7 +190,8 @@ protected ContainerLaunchContextFactory factory;
       if (0 != exitStatus) {
         // container failed
         if (ContainerExitStatus.ABORTED != exitStatus) {
-          totalFailures.incrementAndGet();
+            totalFailures.incrementAndGet();
+      	  containerAllocation.remove(status.getContainerId()).containerCompleted(status.getContainerId());
         } else {
           // container was killed by framework, possibly preempted
           // we should re-try as the container was lost for some reason
@@ -197,7 +199,7 @@ protected ContainerLaunchContextFactory factory;
       } else {
         // nothing to do
         // container completed successfully
-    	  containerAllocation.get(status.getContainerId()).containerCompleted(status.getContainerId());
+    	  containerAllocation.remove(status.getContainerId()).containerCompleted(status.getContainerId());
         LOG.info("Container id = " + status.getContainerId() + " completed successfully");
       }
     }
@@ -209,7 +211,7 @@ protected ContainerLaunchContextFactory factory;
     Set<Container> assigned = Sets.newHashSet();
     for (ContainerTracker tracker : trackers.values()) {
         for (Container allocated : allocatedContainers) {
-            if (tracker.needsContainers()) {
+            if (tracker.isInitilized && tracker.needsContainers()) {
 	          if (!assigned.contains(allocated) && tracker.matches(allocated)) {
 	            tracker.launchContainer(allocated);
 	            assigned.add(allocated);
@@ -270,34 +272,46 @@ protected ContainerLaunchContextFactory factory;
     private Priority priority;
     private ContainerLaunchContext ctxt;
     private List<ContainerTracker> nextTrackers;
-
+    public boolean isInitilized;
+    private List<AMRMClient.ContainerRequest> containerRequests;
+    
     public ContainerTracker(ContainerLaunchParameters parameters) {
       this.params = parameters;
       this.nextTrackers = new ArrayList<ContainerTracker>();
       needed.set(1);
+      isInitilized=false;
     }
 
     public void addNextTracker(ContainerTracker tracker){
     	this.nextTrackers.add(tracker);
+		LOG.info("NextTrackers for: " +params.getName());
+    	for(ContainerTracker t:nextTrackers){
+    		LOG.info("Tracker: " +t.params.getName());
+    	}
     }
     
     public void init(ContainerLaunchContextFactory factory) throws IOException {
       this.nodeManager = NMClientAsync.createNMClientAsync(this);
       nodeManager.init(conf);
       nodeManager.start();
-
-      this.ctxt = factory.create(params);
+      isInitilized=true;
+      
       this.resource = factory.createResource(params);
       this.priority = factory.createPriority(params.getPriority());
       AMRMClient.ContainerRequest containerRequest = new AMRMClient.ContainerRequest(
           resource,
           null, // nodes
           null, // racks
-          priority);
+          priority,
+          true,
+          "");
+      
       int numInstances = params.getNumInstances();
+      this.containerRequests = new ArrayList<AMRMClient.ContainerRequest>();
       LOG.info("Operator: "+params.getName()+" requesting " + numInstances+" containers");
       for (int j = 0; j < numInstances; j++) {
         resourceManager.addContainerRequest(containerRequest);
+        containerRequests.add(containerRequest);
       }
       needed.set(numInstances);
     }
@@ -326,7 +340,7 @@ protected ContainerLaunchContextFactory factory;
       if(v==null)
     	  return;
       completed.incrementAndGet();
-      if(!hasMoreContainers()){
+      /*if(!hasMoreContainers()){
           LOG.info("Starting next trackers" );
     	  for(ContainerTracker t : nextTrackers){
     		  try {
@@ -336,14 +350,24 @@ protected ContainerLaunchContextFactory factory;
 				e.printStackTrace();
     		  }
     	  }
-      }
+      }*/
     }
 
+    public void removeContainerRequests(){
+    	LOG.info("Removing container requests");
+    	for(ContainerRequest c : containerRequests){
+    		resourceManager.removeContainerRequest(c);
+    	}
+    }
+    
     public void containerCompleted(ContainerId containerId) {
+        isInitilized=false;
       LOG.info("Completed container id = " + containerId+" operator: "+params.getName());
       containers.remove(containerId);
       completed.incrementAndGet();
+
       if(!hasMoreContainers()){
+    	  removeContainerRequests();
           LOG.info("Starting next trackers" );
     	  for(ContainerTracker t : nextTrackers){
     		  try {
@@ -386,8 +410,14 @@ protected ContainerLaunchContextFactory factory;
 
     public void launchContainer(Container c) {
       LOG.info("Launching container id = " + c.getId() + " on node = " + c.getNodeId()+" operator: "+params.getName());
-      needed.decrementAndGet();
       containers.put(c.getId(), c);
+      needed.decrementAndGet();
+		try {
+			this.ctxt = factory.create(params);
+		} catch (IOException e) {
+			// TODO Auto-generated catch block
+			e.printStackTrace();
+		}
       nodeManager.startContainerAsync(c, ctxt);
     }
 

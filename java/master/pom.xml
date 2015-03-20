@@ -53,14 +53,12 @@
       <artifactId>hadoop-minicluster</artifactId>
       <version>${hadoop.version}</version>
       <scope>test</scope>
-    </dependency>
-    <!--
+    </dependency> 
     <dependency>
-      <groupId>gr.ntua.cslab</groupId>
-      <artifactId>asap-server</artifactId>
-      <version>0.1-SNAPSHOT</version>
+    	<groupId>gr.ntua.cslab</groupId>
+    	<artifactId>asap-server</artifactId>
+    	<version>0.1-SNAPSHOT</version>
     </dependency>
-    -->
   </dependencies>
 
   <build>
