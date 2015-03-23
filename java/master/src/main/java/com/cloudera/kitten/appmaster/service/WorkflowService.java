@@ -50,8 +50,10 @@ import org.apache.hadoop.yarn.client.api.async.NMClientAsync;
 import org.apache.hadoop.yarn.conf.YarnConfiguration;
 
 import com.cloudera.kitten.ContainerLaunchParameters;
+import com.cloudera.kitten.appmaster.AbstractClient;
 import com.cloudera.kitten.appmaster.ApplicationMasterParameters;
 import com.cloudera.kitten.appmaster.ApplicationMasterService;
+import com.cloudera.kitten.appmaster.params.lua.WorkflowParameters;
 import com.cloudera.kitten.lua.LuaFields;
 import com.google.common.base.Preconditions;
 import com.google.common.collect.Maps;
@@ -63,21 +65,22 @@ public class WorkflowService extends
 
   private static final Log LOG = LogFactory.getLog(WorkflowService.class);
 
-  private final ApplicationMasterParameters parameters;
+  private final WorkflowParameters parameters;
   private final YarnConfiguration conf;
   private final AtomicInteger totalFailures = new AtomicInteger();
   private final HashMap<String,ContainerTracker> trackers = new HashMap<String, ContainerTracker>();
   private HashMap<ContainerId, ContainerTracker> containerAllocation;
-
+  private int prior;
   private AMRMClientAsync resourceManager;
   private boolean hasRunningContainers = false;
   private Throwable throwable;
 
 protected ContainerLaunchContextFactory factory;
 
-  public WorkflowService(ApplicationMasterParameters parameters, Configuration conf) {
+  public WorkflowService(WorkflowParameters parameters, Configuration conf) {
     this.parameters = Preconditions.checkNotNull(parameters);
     this.conf = new YarnConfiguration(conf);
+    this.prior=1;
   }
 
   @Override
@@ -163,6 +166,8 @@ protected ContainerLaunchContextFactory factory;
   
   @Override
   protected void runOneIteration() throws Exception {
+
+	  AbstractClient.issueRequest(parameters.jobName, parameters.workflow);
     if (totalFailures.get() > parameters.getAllowedFailures() ||
         allTrackersFinished()) {
       stop();
@@ -199,8 +204,8 @@ protected ContainerLaunchContextFactory factory;
       } else {
         // nothing to do
         // container completed successfully
+          LOG.info("Container id = " + status.getContainerId() + " completed successfully");
     	  containerAllocation.remove(status.getContainerId()).containerCompleted(status.getContainerId());
-        LOG.info("Container id = " + status.getContainerId() + " completed successfully");
       }
     }
   }
@@ -213,6 +218,7 @@ protected ContainerLaunchContextFactory factory;
         for (Container allocated : allocatedContainers) {
             if (tracker.isInitilized && tracker.needsContainers()) {
 	          if (!assigned.contains(allocated) && tracker.matches(allocated)) {
+	        	  LOG.info("Allocated cores: "+allocated.getResource().getVirtualCores());
 	            tracker.launchContainer(allocated);
 	            assigned.add(allocated);
 	            containerAllocation.put(allocated.getId(), tracker);
@@ -291,13 +297,25 @@ protected ContainerLaunchContextFactory factory;
     }
     
     public void init(ContainerLaunchContextFactory factory) throws IOException {
+    	parameters.workflow.getOperator(params.getName()).setStatus("running");
       this.nodeManager = NMClientAsync.createNMClientAsync(this);
       nodeManager.init(conf);
       nodeManager.start();
       isInitilized=true;
       
       this.resource = factory.createResource(params);
-      this.priority = factory.createPriority(params.getPriority());
+
+      //this.priority = factory.createPriority(params.getPriority());
+      
+      //hack for https://issues.apache.org/jira/browse/YARN-314
+      this.priority = factory.createPriority(prior);
+      prior++;
+      //hack for https://issues.apache.org/jira/browse/YARN-314
+      
+      int numInstances = params.getNumInstances();
+      LOG.info("Operator: "+params.getName()+" requesting " + numInstances+" containers");
+      LOG.info("Resource cores: "+ resource.getVirtualCores());
+      LOG.info("Resource memory: "+ resource.getMemory());
       AMRMClient.ContainerRequest containerRequest = new AMRMClient.ContainerRequest(
           resource,
           null, // nodes
@@ -306,13 +324,14 @@ protected ContainerLaunchContextFactory factory;
           true,
           "");
       
-      int numInstances = params.getNumInstances();
       this.containerRequests = new ArrayList<AMRMClient.ContainerRequest>();
-      LOG.info("Operator: "+params.getName()+" requesting " + numInstances+" containers");
+      //restartResourceManager();
       for (int j = 0; j < numInstances; j++) {
+    	  
         resourceManager.addContainerRequest(containerRequest);
         containerRequests.add(containerRequest);
       }
+
       needed.set(numInstances);
     }
 
@@ -356,8 +375,10 @@ protected ContainerLaunchContextFactory factory;
     public void removeContainerRequests(){
     	LOG.info("Removing container requests");
     	for(ContainerRequest c : containerRequests){
+        	LOG.info("Removing cores: "+c.getCapability().getVirtualCores()+" mem: "+c.getCapability().getMemory());
     		resourceManager.removeContainerRequest(c);
     	}
+    	LOG.info("Blockers: "+resourceManager.getBlockers());
     }
     
     public void containerCompleted(ContainerId containerId) {
@@ -365,6 +386,8 @@ protected ContainerLaunchContextFactory factory;
       LOG.info("Completed container id = " + containerId+" operator: "+params.getName());
       containers.remove(containerId);
       completed.incrementAndGet();
+      
+      parameters.workflow.setOutputsRunning(params.getName());
 
       if(!hasMoreContainers()){
     	  removeContainerRequests();
@@ -405,7 +428,7 @@ protected ContainerLaunchContextFactory factory;
     }
 
     public boolean matches(Container c) {
-      return true; // TODO
+      return containerRequests.get(0).getCapability().getVirtualCores()==c.getResource().getVirtualCores() && containerRequests.get(0).getCapability().getMemory()==c.getResource().getMemory(); 
     }
 
     public void launchContainer(Container c) {

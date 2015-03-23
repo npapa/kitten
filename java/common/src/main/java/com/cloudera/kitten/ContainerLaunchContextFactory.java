@@ -66,7 +66,7 @@ public class ContainerLaunchContextFactory {
   }
   
   
-public Resource createResource(ContainerLaunchParameters parameters) {
+  public Resource createResource(ContainerLaunchParameters parameters) {
     return parameters.getContainerResource(clusterMax);
   }
   

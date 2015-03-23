@@ -122,8 +122,11 @@ public class AsapLuaContainerLaunchParameters implements ContainerLaunchParamete
 
   @Override
   public Resource getContainerResource(Resource clusterMax) {
+	LOG.info("Max cores: "+clusterMax.getVirtualCores());
+	LOG.info("Max memory: "+clusterMax.getMemory());
     Resource rsrc = Records.newRecord(Resource.class);
     rsrc.setMemory(Math.min(clusterMax.getMemory(), getMemory()));
+	LOG.info("Setting cores: "+getCores());
     rsrc.setVirtualCores(Math.min(clusterMax.getVirtualCores(), getCores()));
     return rsrc;
   }

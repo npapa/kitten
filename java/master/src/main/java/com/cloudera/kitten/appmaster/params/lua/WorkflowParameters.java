@@ -63,8 +63,9 @@ public class WorkflowParameters implements ApplicationMasterParameters {
 
   private int clientPort = 0;
   private String trackingUrl = "";
-private WorkflowDictionary workflow;
+public WorkflowDictionary workflow;
 private MaterializedWorkflow1 materializedWorkflow;
+public String jobName;
 
   public WorkflowParameters(Configuration conf) throws Exception{
     this(LuaFields.KITTEN_WORKFLOW_CONFIG_FILE, System.getenv(LuaFields.KITTEN_JOB_NAME), conf);
@@ -100,6 +101,15 @@ private MaterializedWorkflow1 materializedWorkflow;
 			if(op.getIsOperator().equals("true") && op.getStatus().equals("running")){
 				operators.put(op.getName(), op.getName()+".lua");
 			}
+			if(op.getStatus().equals("running")){
+				op.setStatus("warn");
+			}
+		}
+		for(OperatorDictionary op : workflow.getOperators()){
+			if(op.getStatus().equals("warn") && op.getInput().isEmpty()){
+				op.setStatus("running");
+				workflow.setOutputsRunning(op.getName());
+			}
 		}
 		LOG.info("Operators: "+operators);
 		
@@ -114,6 +124,7 @@ private MaterializedWorkflow1 materializedWorkflow;
 		this.conf = conf;
 		this.localToUris = localToUris;
 		this.hostname = NetUtils.getHostname();
+		this.jobName = jobName;
   }
   
   private static Map<String, URI> loadLocalToUris() {
@@ -199,6 +210,7 @@ private MaterializedWorkflow1 materializedWorkflow;
 		        i++;
 		    }
 	  }
+	  
       return clp;
   }
 }

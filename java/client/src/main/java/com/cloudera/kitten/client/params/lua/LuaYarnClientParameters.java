@@ -74,21 +74,22 @@ private String jobName;
   }
   
 
-public LuaYarnClientParameters(String workflow, HashMap<String, String> operators,
+public LuaYarnClientParameters(String name, String workflow, HashMap<String, String> operators,
 		HashMap<String, String> inputDatasets, Configuration conf, Map<String, Object> extraLuaValues,
 		Map<String, String> resources) {
 	  	this.env = new ArrayList<LuaWrapper>();
 	    this.extras = new Extras();
+	    //String dir = "/opt/npapa/asapWorkflow/";
 	  	for( Entry<String, String> e : operators.entrySet()){
 	  		this.env.add(new LuaWrapper(e.getValue(), extraLuaValues).getTable(e.getKey()));
 	  	    this.extras.putResource(e.getValue(), e.getValue());
 	  	}
 	  	for( Entry<String, String> e : inputDatasets.entrySet()){
-	  	    this.extras.putResource(e.getValue(), e.getValue());
+	  	    this.extras.putResource(e.getValue(),  e.getValue());
 	  	}
 	  	this.jobName=workflow;
 	    this.conf = initConf(env.get(0), conf);
-	    this.extras.putEnv(LuaFields.KITTEN_JOB_NAME, workflow);
+	    this.extras.putEnv(LuaFields.KITTEN_JOB_NAME, name);
 	    this.extras.putResource(LuaFields.KITTEN_WORKFLOW_CONFIG_FILE, workflow);
 	    this.extras.putAllResources(resources);
 	    if (extraLuaValues != null && !extraLuaValues.isEmpty()) {
