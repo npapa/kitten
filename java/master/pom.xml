@@ -56,7 +56,7 @@
     </dependency> 
     <dependency>
     	<groupId>gr.ntua.cslab</groupId>
-    	<artifactId>asap-server</artifactId>
+    	<artifactId>asap-beans</artifactId>
     	<version>0.1-SNAPSHOT</version>
     </dependency>
   </dependencies>

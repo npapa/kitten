@@ -14,6 +14,8 @@
  */
 package com.cloudera.kitten.client.params.lua;
 
+import gr.ntua.cslab.asap.rest.beans.WorkflowDictionary;
+
 import java.io.IOException;
 import java.net.URI;
 import java.util.ArrayList;
@@ -82,7 +84,7 @@ public LuaYarnClientParameters(String name, String workflow, HashMap<String, Str
 	    //String dir = "/opt/npapa/asapWorkflow/";
 	  	for( Entry<String, String> e : operators.entrySet()){
 	  		this.env.add(new LuaWrapper(e.getValue(), extraLuaValues).getTable(e.getKey()));
-	  	    this.extras.putResource(e.getValue(), e.getValue());
+	  	    this.extras.putResource(e.getKey()+".lua", e.getValue());
 	  	}
 	  	for( Entry<String, String> e : inputDatasets.entrySet()){
 	  	    this.extras.putResource(e.getValue(),  e.getValue());

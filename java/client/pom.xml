@@ -55,12 +55,6 @@
       <scope>test</scope>
     </dependency>
 
-   <dependency>
-      <groupId>${project.groupId}</groupId>
-      <artifactId>kitten-master</artifactId>
-      <version>${project.version}</version>
-      <scope>test</scope>
-    </dependency>
 
     <dependency>
       <groupId>junit</groupId>
@@ -71,7 +65,7 @@
     
     <dependency>
     	<groupId>gr.ntua.cslab</groupId>
-    	<artifactId>asap-server</artifactId>
+    	<artifactId>asap-beans</artifactId>
     	<version>0.1-SNAPSHOT</version>
     </dependency>
     

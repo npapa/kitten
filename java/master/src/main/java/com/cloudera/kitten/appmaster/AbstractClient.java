@@ -1,7 +1,7 @@
 package com.cloudera.kitten.appmaster;
 
-import gr.cslab.asap.rest.beans.OperatorDictionary;
-import gr.cslab.asap.rest.beans.WorkflowDictionary;
+import gr.ntua.cslab.asap.rest.beans.OperatorDictionary;
+import gr.ntua.cslab.asap.rest.beans.WorkflowDictionary;
 
 import java.io.IOException;
 import java.io.InputStream;

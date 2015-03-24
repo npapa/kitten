@@ -14,9 +14,9 @@
  */
 package com.cloudera.kitten.appmaster.params.lua;
 
-import gr.cslab.asap.rest.beans.OperatorDictionary;
-import gr.cslab.asap.rest.beans.Unmarshall;
-import gr.cslab.asap.rest.beans.WorkflowDictionary;
+import gr.ntua.cslab.asap.rest.beans.OperatorDictionary;
+import gr.ntua.cslab.asap.rest.beans.WorkflowDictionary;
+import gr.ntua.cslab.asap.utils.Utils;
 import gr.ntua.cslab.asap.workflow.MaterializedWorkflow1;
 
 import java.io.BufferedReader;
@@ -91,18 +91,15 @@ public String jobName;
 	  this.env = new HashMap<String,LuaWrapper>();
 		HashMap<String,String> operators = new HashMap<String, String>();
 
-		workflow = Unmarshall.unmarshall(script);
+		workflow = Utils.unmarshall(script);
 		
-		materializedWorkflow = new MaterializedWorkflow1("test");
+		materializedWorkflow = new MaterializedWorkflow1("test", "/tmp");
 		materializedWorkflow.readFromWorkflowDictionary(workflow);
 		LOG.info(materializedWorkflow.getTargets().get(0).toStringRecursive());
 		
 		for(OperatorDictionary op : workflow.getOperators()){
-			if(op.getIsOperator().equals("true") && op.getStatus().equals("running")){
+			if(op.getIsOperator().equals("true") && op.getStatus().equals("warn")){
 				operators.put(op.getName(), op.getName()+".lua");
-			}
-			if(op.getStatus().equals("running")){
-				op.setStatus("warn");
 			}
 		}
 		for(OperatorDictionary op : workflow.getOperators()){

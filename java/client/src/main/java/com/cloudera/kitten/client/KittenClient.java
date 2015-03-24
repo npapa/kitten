@@ -33,17 +33,13 @@ import org.apache.hadoop.yarn.api.records.ApplicationReport;
 import org.apache.hadoop.yarn.api.records.FinalApplicationStatus;
 import org.apache.hadoop.yarn.api.records.YarnApplicationState;
 
-import com.cloudera.kitten.appmaster.ApplicationMasterParameters;
-import com.cloudera.kitten.appmaster.ApplicationMasterService;
-import com.cloudera.kitten.appmaster.params.lua.LuaApplicationMasterParameters;
-import com.cloudera.kitten.appmaster.service.ApplicationMasterServiceImpl;
 import com.cloudera.kitten.client.params.lua.LuaYarnClientParameters;
 import com.cloudera.kitten.client.service.YarnClientServiceImpl;
 import com.google.common.collect.ImmutableMap;
 
-import gr.cslab.asap.rest.beans.OperatorDictionary;
-import gr.cslab.asap.rest.beans.Unmarshall;
-import gr.cslab.asap.rest.beans.WorkflowDictionary;
+import gr.ntua.cslab.asap.rest.beans.OperatorDictionary;
+import gr.ntua.cslab.asap.rest.beans.WorkflowDictionary;
+import gr.ntua.cslab.asap.utils.Utils;
 
 /**
  * A simple client for cases where there does not need to be any client-side logic to run a job.
@@ -80,7 +76,7 @@ public class KittenClient extends Configured implements Tool {
     if(args.length == 1){
 		HashMap<String,String> operators = new HashMap<String, String>();
 		HashMap<String,String> inputDatasets = new HashMap<String, String>();
-		WorkflowDictionary d = Unmarshall.unmarshall(args[0]);
+		WorkflowDictionary d = Utils.unmarshall(args[0]);
 		for(OperatorDictionary op : d.getOperators()){
 			if(op.getIsOperator().equals("true")){
 				operators.put(op.getName(), op.getName()+".lua");
@@ -93,7 +89,7 @@ public class KittenClient extends Configured implements Tool {
 		}
 		System.out.println("Operators: "+operators);
 		System.out.println("InputDatasets: "+inputDatasets);
-	    LuaYarnClientParameters params = new LuaYarnClientParameters(args[0], operators, inputDatasets, conf,
+	    LuaYarnClientParameters params = new LuaYarnClientParameters(args[0], args[0], operators, inputDatasets, conf,
 	        extraLuaValues, extraLocalResources);
 	    service = new YarnClientServiceImpl(params);
     }
