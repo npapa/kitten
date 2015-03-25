@@ -65,19 +65,20 @@ public class WorkflowService extends
 
   private static final Log LOG = LogFactory.getLog(WorkflowService.class);
 
-  private final WorkflowParameters parameters;
-  private final YarnConfiguration conf;
+  public final WorkflowParameters parameters;
+  public final YarnConfiguration conf;
   private final AtomicInteger totalFailures = new AtomicInteger();
-  private final HashMap<String,ContainerTracker> trackers = new HashMap<String, ContainerTracker>();
+  private HashMap<String,ContainerTracker> trackers;
   private HashMap<ContainerId, ContainerTracker> containerAllocation;
-  private int prior;
-  private AMRMClientAsync resourceManager;
+  public int prior;
+  public AMRMClientAsync<ContainerRequest> resourceManager;
   private boolean hasRunningContainers = false;
   private Throwable throwable;
 
 protected ContainerLaunchContextFactory factory;
 
   public WorkflowService(WorkflowParameters parameters, Configuration conf) {
+	  this.trackers = new HashMap<String, ContainerTracker>();
     this.parameters = Preconditions.checkNotNull(parameters);
     this.conf = new YarnConfiguration(conf);
     this.prior=1;
@@ -114,7 +115,14 @@ protected ContainerLaunchContextFactory factory;
 
     factory = new ContainerLaunchContextFactory(
         registration.getMaximumResourceCapability());
-    for ( Entry<String, ContainerLaunchParameters> e : parameters.getContainerLaunchParameters().entrySet()) {
+    
+    trackers = parameters.createTrackers(this);
+
+    for(ContainerTracker t : trackers.values()){
+	    t.init(factory);
+    }
+    
+    /*for ( Entry<String, ContainerLaunchParameters> e : parameters.getContainerLaunchParameters().entrySet()) {
     	ContainerTracker tracker = new ContainerTracker(e.getValue());
     	LOG.info("Operator: " + e.getKey());
     	trackers.put(e.getKey(),tracker);
@@ -124,7 +132,7 @@ protected ContainerLaunchContextFactory factory;
     trackers.get("Move_MySQL_HBase").addNextTracker(trackers.get("HBase_HashJoin"));
     trackers.get("HBase_HashJoin").addNextTracker(trackers.get("Sort2"));
     
-    trackers.get("Move_MySQL_HBase").init(factory);
+    trackers.get("Move_MySQL_HBase").init(factory);*/
     
     this.hasRunningContainers = true;
   }
@@ -265,197 +273,5 @@ protected ContainerLaunchContextFactory factory;
     stop();
   }
 
-  private class ContainerTracker implements NMClientAsync.CallbackHandler {
-    private final ContainerLaunchParameters params;
-    private final ConcurrentMap<ContainerId, Container> containers = Maps.newConcurrentMap();
 
-    private AtomicInteger needed = new AtomicInteger();
-    private AtomicInteger started = new AtomicInteger();
-    private AtomicInteger completed = new AtomicInteger();
-    private AtomicInteger failed = new AtomicInteger();
-    private NMClientAsync nodeManager;
-    private Resource resource;
-    private Priority priority;
-    private ContainerLaunchContext ctxt;
-    private List<ContainerTracker> nextTrackers;
-    public boolean isInitilized;
-    private List<AMRMClient.ContainerRequest> containerRequests;
-    
-    public ContainerTracker(ContainerLaunchParameters parameters) {
-      this.params = parameters;
-      this.nextTrackers = new ArrayList<ContainerTracker>();
-      needed.set(1);
-      isInitilized=false;
-    }
-
-    public void addNextTracker(ContainerTracker tracker){
-    	this.nextTrackers.add(tracker);
-		LOG.info("NextTrackers for: " +params.getName());
-    	for(ContainerTracker t:nextTrackers){
-    		LOG.info("Tracker: " +t.params.getName());
-    	}
-    }
-    
-    public void init(ContainerLaunchContextFactory factory) throws IOException {
-    	parameters.workflow.getOperator(params.getName()).setStatus("running");
-      this.nodeManager = NMClientAsync.createNMClientAsync(this);
-      nodeManager.init(conf);
-      nodeManager.start();
-      isInitilized=true;
-      
-      this.resource = factory.createResource(params);
-
-      //this.priority = factory.createPriority(params.getPriority());
-      
-      //hack for https://issues.apache.org/jira/browse/YARN-314
-      this.priority = factory.createPriority(prior);
-      prior++;
-      //hack for https://issues.apache.org/jira/browse/YARN-314
-      
-      int numInstances = params.getNumInstances();
-      LOG.info("Operator: "+params.getName()+" requesting " + numInstances+" containers");
-      LOG.info("Resource cores: "+ resource.getVirtualCores());
-      LOG.info("Resource memory: "+ resource.getMemory());
-      AMRMClient.ContainerRequest containerRequest = new AMRMClient.ContainerRequest(
-          resource,
-          null, // nodes
-          null, // racks
-          priority,
-          true,
-          "");
-      
-      this.containerRequests = new ArrayList<AMRMClient.ContainerRequest>();
-      //restartResourceManager();
-      for (int j = 0; j < numInstances; j++) {
-    	  
-        resourceManager.addContainerRequest(containerRequest);
-        containerRequests.add(containerRequest);
-      }
-
-      needed.set(numInstances);
-    }
-
-    @Override
-    public void onContainerStarted(ContainerId containerId, Map<String, ByteBuffer> allServiceResponse) {
-      Container container = containers.get(containerId);
-      if (container != null) {
-        LOG.info("Starting container id = " + containerId);
-        started.incrementAndGet();
-        nodeManager.getContainerStatusAsync(containerId, container.getNodeId());
-      }
-    }
-
-    @Override
-    public void onContainerStatusReceived(ContainerId containerId, ContainerStatus containerStatus) {
-      if (LOG.isDebugEnabled()) {
-        LOG.debug("Received status for container: " + containerId + " = " + containerStatus);
-      }
-    }
-
-    @Override
-    public void onContainerStopped(ContainerId containerId) {
-      LOG.info("Stopping container id = " + containerId);
-      Container v = containers.remove(containerId);
-      if(v==null)
-    	  return;
-      completed.incrementAndGet();
-      /*if(!hasMoreContainers()){
-          LOG.info("Starting next trackers" );
-    	  for(ContainerTracker t : nextTrackers){
-    		  try {
-				t.init(factory);
-    		  } catch (IOException e) {
-				// TODO Auto-generated catch block
-				e.printStackTrace();
-    		  }
-    	  }
-      }*/
-    }
-
-    public void removeContainerRequests(){
-    	LOG.info("Removing container requests");
-    	for(ContainerRequest c : containerRequests){
-        	LOG.info("Removing cores: "+c.getCapability().getVirtualCores()+" mem: "+c.getCapability().getMemory());
-    		resourceManager.removeContainerRequest(c);
-    	}
-    	LOG.info("Blockers: "+resourceManager.getBlockers());
-    }
-    
-    public void containerCompleted(ContainerId containerId) {
-        isInitilized=false;
-      LOG.info("Completed container id = " + containerId+" operator: "+params.getName());
-      containers.remove(containerId);
-      completed.incrementAndGet();
-      
-      parameters.workflow.setOutputsRunning(params.getName());
-
-      if(!hasMoreContainers()){
-    	  removeContainerRequests();
-          LOG.info("Starting next trackers" );
-    	  for(ContainerTracker t : nextTrackers){
-    		  try {
-				t.init(factory);
-    		  } catch (IOException e) {
-				// TODO Auto-generated catch block
-				e.printStackTrace();
-    		  }
-    	  }
-      }
-    }
-
-    @Override
-    public void onStartContainerError(ContainerId containerId, Throwable throwable) {
-      LOG.warn("Start container error for container id = " + containerId, throwable);
-      containers.remove(containerId);
-      completed.incrementAndGet();
-      failed.incrementAndGet();
-    }
-
-    @Override
-    public void onGetContainerStatusError(ContainerId containerId, Throwable throwable) {
-      LOG.error("Could not get status for container: " + containerId, throwable);
-    }
-
-    @Override
-    public void onStopContainerError(ContainerId containerId, Throwable throwable) {
-      LOG.error("Failed to stop container: " + containerId, throwable);
-      completed.incrementAndGet();
-    }
-
-    public boolean needsContainers() {
-        //LOG.info("operator: "+params.getName()+" needed: "+needed);
-        return needed.get() > 0;
-    }
-
-    public boolean matches(Container c) {
-      return containerRequests.get(0).getCapability().getVirtualCores()==c.getResource().getVirtualCores() && containerRequests.get(0).getCapability().getMemory()==c.getResource().getMemory(); 
-    }
-
-    public void launchContainer(Container c) {
-      LOG.info("Launching container id = " + c.getId() + " on node = " + c.getNodeId()+" operator: "+params.getName());
-      containers.put(c.getId(), c);
-      needed.decrementAndGet();
-		try {
-			this.ctxt = factory.create(params);
-		} catch (IOException e) {
-			// TODO Auto-generated catch block
-			e.printStackTrace();
-		}
-      nodeManager.startContainerAsync(c, ctxt);
-    }
-
-    public boolean hasRunningContainers() {
-      return !containers.isEmpty();
-    }
-
-    public void kill() {
-      for (Container c : containers.values()) {
-        nodeManager.stopContainerAsync(c.getId(), c.getNodeId());
-      }
-    }
-
-    public boolean hasMoreContainers() {
-      return needsContainers() || hasRunningContainers();
-    }
-  }
 }

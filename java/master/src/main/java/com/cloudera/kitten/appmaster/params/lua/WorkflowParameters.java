@@ -39,6 +39,8 @@ import org.apache.hadoop.conf.Configuration;
 
 import com.cloudera.kitten.ContainerLaunchParameters;
 import com.cloudera.kitten.appmaster.ApplicationMasterParameters;
+import com.cloudera.kitten.appmaster.service.WorkflowService;
+import com.cloudera.kitten.appmaster.service.ContainerTracker;
 import com.cloudera.kitten.lua.AsapLuaContainerLaunchParameters;
 import com.cloudera.kitten.lua.LuaContainerLaunchParameters;
 import com.cloudera.kitten.lua.LuaFields;
@@ -57,15 +59,15 @@ public class WorkflowParameters implements ApplicationMasterParameters {
 	private static final Log LOG = LogFactory.getLog(WorkflowParameters.class);
 	private final HashMap<String,LuaWrapper> env;
 	private LuaWrapper e0;
-  private final Configuration conf;
-  private final Map<String, URI> localToUris;
-  private final String hostname;
+	private final Configuration conf;
+	private final Map<String, URI> localToUris;
+	private final String hostname;
 
-  private int clientPort = 0;
-  private String trackingUrl = "";
-public WorkflowDictionary workflow;
-private MaterializedWorkflow1 materializedWorkflow;
-public String jobName;
+	private int clientPort = 0;
+	private String trackingUrl = "";
+	public WorkflowDictionary workflow;
+	private MaterializedWorkflow1 materializedWorkflow;
+	public String jobName;
 
   public WorkflowParameters(Configuration conf) throws Exception{
     this(LuaFields.KITTEN_WORKFLOW_CONFIG_FILE, System.getenv(LuaFields.KITTEN_JOB_NAME), conf);
@@ -210,4 +212,40 @@ public String jobName;
 	  
       return clp;
   }
+
+	public HashMap<String, ContainerTracker> createTrackers(WorkflowService workflowService) {
+		HashMap<String, ContainerTracker> trackers = new HashMap<String, ContainerTracker>();
+	    for ( Entry<String, ContainerLaunchParameters> e : getContainerLaunchParameters().entrySet()) {
+	    	ContainerTracker tracker = new ContainerTracker(workflowService, e.getValue());
+	    	trackers.put(e.getKey(),tracker);
+	    }
+	    LOG.info("Trackers: " + trackers);
+	    
+	    for(Entry<String, ContainerTracker> e : trackers.entrySet()){
+	    	for(String in : workflow.getOperator(e.getKey()).getInput()){
+	    		addTrackerDependencyRecursive(in, e.getKey(), trackers);
+	    	}
+	    }
+	    
+		return trackers;
+	}
+	
+	private void addTrackerDependencyRecursive(String in, String out, HashMap<String, ContainerTracker> trackers){
+		ContainerTracker outTracker = trackers.get(out);
+		ContainerTracker inTracker = trackers.get(in);
+		OperatorDictionary inOp = workflow.getOperator(in);
+		if(inOp.getStatus().equals("stopped"))
+			return;
+		if(inOp.getIsOperator().equals("true")){
+			LOG.info("Adding previous tracker: " +in+" -> "+out);
+			outTracker.addPreviousTracker(inTracker);
+			inTracker.addNextTracker(outTracker);
+		}
+		else{
+			//dataset
+	    	for(String in1 : inOp.getInput()){
+	    		addTrackerDependencyRecursive(in1, out, trackers);
+	    	}
+		}
+	}
 }
