@@ -66,7 +66,7 @@ public class WorkflowParameters implements ApplicationMasterParameters {
 	private int clientPort = 0;
 	private String trackingUrl = "";
 	public WorkflowDictionary workflow;
-	private MaterializedWorkflow1 materializedWorkflow;
+	public MaterializedWorkflow1 materializedWorkflow;
 	public String jobName;
 
   public WorkflowParameters(Configuration conf) throws Exception{

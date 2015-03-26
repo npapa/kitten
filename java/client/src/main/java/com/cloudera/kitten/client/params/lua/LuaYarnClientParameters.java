@@ -87,7 +87,7 @@ public LuaYarnClientParameters(String name, String workflow, HashMap<String, Str
 	  	    this.extras.putResource(e.getKey()+".lua", e.getValue());
 	  	}
 	  	for( Entry<String, String> e : inputDatasets.entrySet()){
-	  	    this.extras.putResource(e.getValue(),  e.getValue());
+	  	    this.extras.putResource(e.getKey(),  e.getValue());
 	  	}
 	  	this.jobName=workflow;
 	    this.conf = initConf(env.get(0), conf);

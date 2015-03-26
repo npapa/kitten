@@ -37,6 +37,7 @@ import com.cloudera.kitten.client.params.lua.LuaYarnClientParameters;
 import com.cloudera.kitten.client.service.YarnClientServiceImpl;
 import com.google.common.collect.ImmutableMap;
 
+import gr.ntua.cslab.asap.operators.Dataset;
 import gr.ntua.cslab.asap.rest.beans.OperatorDictionary;
 import gr.ntua.cslab.asap.rest.beans.WorkflowDictionary;
 import gr.ntua.cslab.asap.utils.Utils;
@@ -83,7 +84,10 @@ public class KittenClient extends Configured implements Tool {
 			}
 			else{
 				if(op.getInput().isEmpty()){
-					inputDatasets.put(op.getName(), op.getName());
+					Dataset inDataset = new Dataset(op.getName());
+					inDataset.readPropertiesFromString(op.getDescription());
+					System.out.println("Adding dataset: "+op.getName()+" "+inDataset.getParameter("Execution.path"));
+					inputDatasets.put(op.getName(), inDataset.getParameter("Execution.path"));
 				}
 			}
 		}
