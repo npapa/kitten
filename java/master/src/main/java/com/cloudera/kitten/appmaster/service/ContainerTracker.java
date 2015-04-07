@@ -99,9 +99,10 @@ public class ContainerTracker implements NMClientAsync.CallbackHandler {
       LOG.info("Operator: "+params.getName()+" requesting " + numInstances+" containers");
       LOG.info("Resource cores: "+ resource.getVirtualCores());
       LOG.info("Resource memory: "+ resource.getMemory());
+      String[] nodes = null;//{"slave1"};
       AMRMClient.ContainerRequest containerRequest = new AMRMClient.ContainerRequest(
           resource,
-          null, // nodes
+          nodes, // nodes
           null, // racks
           priority,
           true,

@@ -29,6 +29,13 @@
     <assembly.plugin.version>2.2.1</assembly.plugin.version>
   </properties>
 
+          <repositories>
+                <repository>
+                        <id>cloudera-repo-releases</id>
+                        <url>https://repository.cloudera.com/artifactory/repo/</url>
+                </repository>
+        </repositories>
+
   <distributionManagement>
     <repository>
       <id>cloudera-local</id>

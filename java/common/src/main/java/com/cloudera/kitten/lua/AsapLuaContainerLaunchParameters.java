@@ -108,9 +108,20 @@ public class AsapLuaContainerLaunchParameters implements ContainerLaunchParamete
 	        ret.add(restIter.next().value.tojstring());
 	      }
 	    }
-	    ret.add(operator.operator.getParameter("Execution.Output0.fileName"));
+	    ret.add(operator.operator.getParameter("Execution.Output0.path"));
 	    return ret;
   }
+  
+
+ /* private List<String> getStageInFiles() {
+      List<String> ret = new ArrayList<String>();
+      for(WorkflowNode in : operator.inputs){
+    	  String path = in.dataset.getParameter("Execution.path");
+      }
+	  ret.add(operator.operator.getParameter("Execution.Output0.fileName"));
+	  return ret;
+  	
+  }*/
   
   public int getCores() {
     return lv.getInteger(LuaFields.CORES);
@@ -174,7 +185,7 @@ public class AsapLuaContainerLaunchParameters implements ContainerLaunchParamete
     addScript(localResources);
     addOperatorInputs(localResources);
     //LOG.info("localFileUris: "+localFileUris);
-    //LOG.info("localResources: "+localResources);
+    LOG.info("localResources: "+localResources.keySet());
     //System.out.println(localResources);
     
     
@@ -184,23 +195,23 @@ public class AsapLuaContainerLaunchParameters implements ContainerLaunchParamete
 
   private void addOperatorInputs(Map<String, LocalResource> localResources) throws IOException {
 	  LOG.info("Inputs: "+operator.getInputFiles());
+	  FileSystem fs = FileSystem.get(conf);
 	  for(Entry<String, String> e : operator.getInputFiles().entrySet()){
-		  	String inDir =dir;
-		  	if(!e.getValue().equals("")){
-		  		inDir+="/"+e.getValue()+"_0";
+		  	if(!e.getValue().startsWith("hdfs://")){
+		  		LOG.info("adding local resource: "+e);
+			  	String inDir =dir;
+				LocalResource rsrc = Records.newRecord(LocalResource.class);
+				rsrc.setType(LocalResourceType.FILE);
+				rsrc.setVisibility(LocalResourceVisibility.APPLICATION);
+				LOG.info("Adding input: "+inDir+"/"+e.getValue());
+				Path dst = new Path(inDir+"/"+e.getValue());
+				dst = fs.makeQualified(dst);
+				FileStatus stat = fs.getFileStatus(dst);
+				rsrc.setSize(stat.getLen());
+				rsrc.setTimestamp(stat.getModificationTime());
+				rsrc.setResource(ConverterUtils.getYarnUrlFromPath(dst));
+				localResources.put(e.getKey(), rsrc);
 		  	}
-			LocalResource rsrc = Records.newRecord(LocalResource.class);
-			rsrc.setType(LocalResourceType.FILE);
-			rsrc.setVisibility(LocalResourceVisibility.APPLICATION);
-			FileSystem fs = FileSystem.get(conf);
-			LOG.info("Adding input: "+inDir+"/"+e.getKey());
-			Path dst = new Path(inDir+"/"+e.getKey());
-			dst = fs.makeQualified(dst);
-			FileStatus stat = fs.getFileStatus(dst);
-			rsrc.setSize(stat.getLen());
-			rsrc.setTimestamp(stat.getModificationTime());
-			rsrc.setResource(ConverterUtils.getYarnUrlFromPath(dst));
-			localResources.put(e.getKey(), rsrc);
 	  }
 	  /*for(String in : operator.getArguments().split(" ")){
 		  LOG.info("Adding input: "+in);
@@ -350,19 +361,33 @@ private void addScript(Map<String, LocalResource> lres) throws IOException {
     dir = localFileUris.get(LuaFields.KITTEN_JOB_XML_FILE).getPath();
     dir = dir.substring(0, dir.lastIndexOf("/"));
     //System.out.println("Dir: " +dir);
-    String args = opName+" "+operator.getArguments();
+    //String args = opName+" "+operator.getArguments();
+    String args = operator.getArguments();
     
     List<String> oldcmds = cmds;
     cmds = new ArrayList<String>();
+
+	LOG.info("Inputs: "+operator.getInputFiles());
+	for(Entry<String, String> e : operator.getInputFiles().entrySet()){
+	  	if(e.getValue().startsWith("hdfs://")){
+	  		LOG.info("adding hdfs input: "+e);
+		    cmds.add("/opt/hadoop-2.6.0/bin/hadoop fs -copyToLocal "+e.getValue()+" .");
+	  		
+	  	}
+		
+	}
     for(String c : oldcmds){
     	cmds.add(c+" "+args);
     }
-	LOG.info("Commands: "+cmds);
+
+    //List<String> stageInFiles = getStageInFiles();
     
-    List<String> stageOutFiles = getStageOutFiles();
     //System.out.println("stageOutFiles: "+stageOutFiles);
     cmds.add("ls -ltr");
-    String outdir = dir+"/"+this.name+"_"+globalContainerId;
+    //cmds.add("ls -ltr asapData/");
+    String outdir = dir+"/"+this.name;//+"_"+globalContainerId;
+    
+    List<String> stageOutFiles = getStageOutFiles();
     cmds.add("/opt/hadoop-2.6.0/bin/hadoop fs -mkdir "+outdir);
     for(String f : stageOutFiles){
 	    cmds.add("/opt/hadoop-2.6.0/bin/hadoop fs -moveFromLocal "+f+" "+outdir);
@@ -370,7 +395,9 @@ private void addScript(Map<String, LocalResource> lres) throws IOException {
     //System.out.println("Container commands: "+cmds);
     execScript = writeExecutionScript(cmds);
     globalContainerId++;
-    
+
+	LOG.info("Commands: "+cmds);
+	
     cmds = new ArrayList<String>();
     cmds.add("./"+execScript+" 1> <LOG_DIR>/stdout 2> <LOG_DIR>/stderr");
     
@@ -378,7 +405,8 @@ private void addScript(Map<String, LocalResource> lres) throws IOException {
   }
   
 
-  private String writeExecutionScript(List<String> cmds) throws IOException {
+
+private String writeExecutionScript(List<String> cmds) throws IOException {
 	  UUID id = UUID.randomUUID();
 	  String ret = "script_"+id+".sh";
 	  File fout = new File("/tmp/"+ret);

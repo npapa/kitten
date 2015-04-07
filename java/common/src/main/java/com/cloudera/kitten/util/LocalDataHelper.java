@@ -120,8 +120,9 @@ public class LocalDataHelper {
   }
   
   private void copyToHdfs(String key, String localDataName) throws IOException {
-    if (!localToHdfs.containsKey(localDataName)) {
       FileSystem fs = FileSystem.get(conf);
+      
+    if (!localToHdfs.containsKey(localDataName)) {
       Path src = new Path(localDataName);
       Path dst = getPath(fs, src.getName());
       InputStream data = getFileOrResource(localDataName);

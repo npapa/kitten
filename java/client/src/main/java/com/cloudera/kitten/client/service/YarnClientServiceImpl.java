@@ -89,7 +89,9 @@ public class YarnClientServiceImpl extends AbstractScheduledService
     // Setup the container for the application master.
     ContainerLaunchParameters appMasterParams = parameters.getApplicationMasterParameters(applicationId);
     ContainerLaunchContext clc = clcFactory.create(appMasterParams);
+
     appContext.setResource(clcFactory.createResource(appMasterParams));
+    
     appContext.setAMContainerSpec(clc);
     appContext.setQueue(parameters.getQueue());
     appContext.setPriority(clcFactory.createPriority(appMasterParams.getPriority()));
