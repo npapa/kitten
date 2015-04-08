@@ -108,7 +108,9 @@ public class AsapLuaContainerLaunchParameters implements ContainerLaunchParamete
 	        ret.add(restIter.next().value.tojstring());
 	      }
 	    }
-	    ret.add(operator.operator.getParameter("Execution.Output0.path"));
+	    List<String> outputFiles= operator.getOutputFiles();
+	    LOG.info("Output files: "+outputFiles);
+	    ret.addAll(outputFiles);
 	    return ret;
   }
   
@@ -197,7 +199,7 @@ public class AsapLuaContainerLaunchParameters implements ContainerLaunchParamete
 	  LOG.info("Inputs: "+operator.getInputFiles());
 	  FileSystem fs = FileSystem.get(conf);
 	  for(Entry<String, String> e : operator.getInputFiles().entrySet()){
-		  	if(!e.getValue().startsWith("hdfs://")){
+		  	if((!e.getValue().startsWith("hdfs://"))&&(!e.getValue().startsWith("$HDFS"))){
 		  		LOG.info("adding local resource: "+e);
 			  	String inDir =dir;
 				LocalResource rsrc = Records.newRecord(LocalResource.class);
@@ -366,16 +368,19 @@ private void addScript(Map<String, LocalResource> lres) throws IOException {
     
     List<String> oldcmds = cmds;
     cmds = new ArrayList<String>();
+    String outdir = dir+"/"+this.name;//+"_"+globalContainerId;
 
 	LOG.info("Inputs: "+operator.getInputFiles());
 	for(Entry<String, String> e : operator.getInputFiles().entrySet()){
-	  	if(e.getValue().startsWith("hdfs://")){
-	  		LOG.info("adding hdfs input: "+e);
-		    cmds.add("/opt/hadoop-2.6.0/bin/hadoop fs -copyToLocal "+e.getValue()+" .");
-	  		
-	  	}
+  		String inPath = e.getValue().replace("$HDFS_DIR", dir);
+  		inPath = inPath.replace("$HDFS_OP_DIR", outdir);
+  		LOG.info("adding hdfs input: "+e);
+	    cmds.add("/opt/hadoop-2.6.0/bin/hadoop fs -copyToLocal "+inPath+" .");
 		
 	}
+    cmds.add("/opt/hadoop-2.6.0/bin/hadoop fs -mkdir "+outdir);
+    args = args.replace("$HDFS_DIR", dir);
+    args = args.replace("$HDFS_OP_DIR", outdir);
     for(String c : oldcmds){
     	cmds.add(c+" "+args);
     }
@@ -385,10 +390,8 @@ private void addScript(Map<String, LocalResource> lres) throws IOException {
     //System.out.println("stageOutFiles: "+stageOutFiles);
     cmds.add("ls -ltr");
     //cmds.add("ls -ltr asapData/");
-    String outdir = dir+"/"+this.name;//+"_"+globalContainerId;
     
     List<String> stageOutFiles = getStageOutFiles();
-    cmds.add("/opt/hadoop-2.6.0/bin/hadoop fs -mkdir "+outdir);
     for(String f : stageOutFiles){
 	    cmds.add("/opt/hadoop-2.6.0/bin/hadoop fs -moveFromLocal "+f+" "+outdir);
     }
