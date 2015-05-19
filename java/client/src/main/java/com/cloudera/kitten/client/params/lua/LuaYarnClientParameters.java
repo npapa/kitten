@@ -89,7 +89,7 @@ public LuaYarnClientParameters(String name, String workflow, HashMap<String, Str
 	  	for( Entry<String, String> e : inputDatasets.entrySet()){
 	  		if(e.getValue()!=null){
 		  		if(e.getValue().startsWith("hdfs://")){
-		  			System.out.println("hdfs resource");
+		  			LOG.info("hdfs resource: "+e.getValue());
 		  		}
 		  		else{
 		  			this.extras.putResource(e.getKey(),  e.getValue());
